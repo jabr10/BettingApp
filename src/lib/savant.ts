@@ -3,6 +3,8 @@ import {
   MIX_SEASON,
   SAVANT_BASE,
   SAVANT_CACHE_MS,
+  VERCEL_HTTP_TIMEOUT_MS,
+  VERCEL_SAVANT_BUDGET_MS,
 } from "./constants";
 import { cacheGet, cacheGetStale, cacheSet } from "./cache";
 import { int, num, parseCsv } from "./csv";
@@ -22,13 +24,34 @@ type SerializedStore = {
 
 const STORE_KEY = `savant-store-v1-${MIX_SEASON}-${BATTER_POOL_SEASONS.join("_")}`;
 
+export function emptySavantStore(warnings: DataWarning[] = []): SavantStore {
+  return {
+    fetchedAt: "",
+    pitcherUsage: new Map(),
+    pitcherVsType: new Map(),
+    batterVsType: new Map(),
+    batterVsHand: new Map(),
+    league: {
+      L: { hand: "L", xwoba: 0, xba: 0, xslg: 0, whiff: 0, barrel: null, pa: 0 },
+      R: { hand: "R", xwoba: 0, xba: 0, xslg: 0, whiff: 0, barrel: null, pa: 0 },
+    },
+    warnings,
+  };
+}
+
+export function savantStoreIsUsable(store: SavantStore): boolean {
+  return store.pitcherUsage.size > 0 || store.pitcherVsType.size > 0 || store.batterVsType.size > 0;
+}
+
 export async function loadSavantStore(): Promise<SavantStore> {
   const cached = await cacheGet<SerializedStore>(STORE_KEY, SAVANT_CACHE_MS);
   if (cached) return deserialize(cached);
 
   try {
     const store = await fetchSavantStore();
-    await cacheSet(STORE_KEY, serialize(store), SAVANT_CACHE_MS);
+    if (savantStoreIsUsable(store)) {
+      await cacheSet(STORE_KEY, serialize(store), SAVANT_CACHE_MS);
+    }
     return store;
   } catch (err) {
     const stale = await cacheGetStale<SerializedStore>(STORE_KEY);
@@ -49,6 +72,7 @@ export async function loadSavantStore(): Promise<SavantStore> {
 
 async function fetchSavantStore(): Promise<SavantStore> {
   const warnings: DataWarning[] = [];
+  const deadline = Date.now() + savantBudgetMs();
   const pitcherUsage = new Map<number, Record<string, number>>();
   const pitcherVsType = new Map<number, Map<string, PitchRates>>();
   const batterVsType = new Map<number, Map<string, PitchRates>>();
@@ -58,6 +82,7 @@ async function fetchSavantStore(): Promise<SavantStore> {
     arsenalUsageUrl(MIX_SEASON),
     "pitch-arsenals usage 2026",
     warnings,
+    deadline,
   );
   for (const row of usageRows) {
     const id = int(row.pitcher || row.player_id);
@@ -76,6 +101,7 @@ async function fetchSavantStore(): Promise<SavantStore> {
     arsenalStatsUrl("pitcher", MIX_SEASON),
     "pitch-arsenal-stats pitchers 2026",
     warnings,
+    deadline,
   );
   for (const row of pitcherStatRows) {
     const parsed = parseArsenalRow(row);
@@ -95,6 +121,7 @@ async function fetchSavantStore(): Promise<SavantStore> {
       arsenalStatsUrl("batter", year),
       `pitch-arsenal-stats batters ${year}`,
       warnings,
+      deadline,
     );
     for (const row of rows) {
       const parsed = parseArsenalRow(row);
@@ -111,6 +138,7 @@ async function fetchSavantStore(): Promise<SavantStore> {
       vsHandSearchUrl(hand),
       `statcast search batters vs ${hand}HP 2025-2026`,
       warnings,
+      deadline,
     );
     for (const row of rows) {
       const id = int(row.player_id);
@@ -119,7 +147,7 @@ async function fetchSavantStore(): Promise<SavantStore> {
     }
   }
 
-  await attachBatterBarrels(batterVsType, warnings);
+  await attachBatterBarrels(batterVsType, warnings, deadline);
 
   const league = {
     L: leagueFromVsHand(batterVsHand, "L"),
@@ -140,6 +168,7 @@ async function fetchSavantStore(): Promise<SavantStore> {
 async function attachBatterBarrels(
   batterVsType: Map<number, Map<string, PitchRates>>,
   warnings: DataWarning[],
+  deadline: number,
 ) {
   const types = ["FF", "SI", "FC", "SL", "ST", "SV", "CU", "KC", "CH", "FS"];
   for (const type of types) {
@@ -147,6 +176,7 @@ async function attachBatterBarrels(
       pitchTypeSearchUrl(type),
       `statcast search batters vs ${type} 2025-2026 (barrel)`,
       warnings,
+      deadline,
     );
     for (const row of rows) {
       const id = int(row.player_id);
@@ -247,9 +277,24 @@ function pitchTypeSearchUrl(type: string): string {
   return `${SAVANT_BASE}/statcast_search/csv?all=true&hfPT=${type}%7C&hfAB=&hfGT=R%7C&hfSea=${sea}&player_type=batter&min_abs=1&group_by=name&sort_col=pitches&sort_order=desc&min_pitches=0&min_results=0`;
 }
 
-async function safeCsv(url: string, label: string, warnings: DataWarning[]): Promise<Record<string, string>[]> {
+async function safeCsv(
+  url: string,
+  label: string,
+  warnings: DataWarning[],
+  deadline: number,
+): Promise<Record<string, string>[]> {
+  const remain = deadline - Date.now();
+  if (remain <= 1_000) {
+    warnings.push({
+      source: "savant",
+      message: `Skipped ${label}: request time budget exhausted before Baseball Savant responded. Matching rows that need this file will be empty — no numbers were invented.`,
+    });
+    return [];
+  }
   try {
-    const text = await fetchText(url, { timeoutMs: 60_000, retries: 2 });
+    const onVercel = Boolean(process.env.VERCEL);
+    const timeoutMs = Math.min(onVercel ? VERCEL_HTTP_TIMEOUT_MS : 60_000, remain);
+    const text = await fetchText(url, { timeoutMs, retries: onVercel ? 1 : 2 });
     return parseCsv(text);
   } catch (err) {
     warnings.push({
@@ -258,6 +303,10 @@ async function safeCsv(url: string, label: string, warnings: DataWarning[]): Pro
     });
     return [];
   }
+}
+
+function savantBudgetMs(): number {
+  return process.env.VERCEL ? VERCEL_SAVANT_BUDGET_MS : 180_000;
 }
 
 function errMsg(err: unknown): string {

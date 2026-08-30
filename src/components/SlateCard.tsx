@@ -3,7 +3,13 @@ import { ChipList } from "./Chip";
 import { combinedLineupLabel, starterSummary } from "@/lib/slate";
 import type { GameCard } from "@/lib/types";
 
-export function SlateCard({ game }: { game: GameCard }) {
+export function SlateCard({
+  game,
+  savantPending = false,
+}: {
+  game: GameCard;
+  savantPending?: boolean;
+}) {
   return (
     <Link href={`/game/${game.gamePk}`} className="card game">
       <div className="card-head">
@@ -31,7 +37,11 @@ export function SlateCard({ game }: { game: GameCard }) {
           <b>{starterSummary(game.home.starter)}</b>
         </div>
       </div>
-      <ChipList chips={game.chips} />
+      {savantPending ? (
+        <p className="meta">Chips pending Baseball Savant pitch-mix files.</p>
+      ) : (
+        <ChipList chips={game.chips} />
+      )}
     </Link>
   );
 }

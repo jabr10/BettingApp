@@ -2,7 +2,15 @@ import { Chip } from "./Chip";
 import { fmtSigned } from "@/lib/format";
 import type { LineupState, TeamSide } from "@/lib/types";
 
-export function LineupTable({ side, vs }: { side: TeamSide; vs: string }) {
+export function LineupTable({
+  side,
+  vs,
+  scoringPending = false,
+}: {
+  side: TeamSide;
+  vs: string;
+  scoringPending?: boolean;
+}) {
   return (
     <section className="card">
       <div className="card-head">
@@ -64,10 +72,16 @@ export function LineupTable({ side, vs }: { side: TeamSide; vs: string }) {
                     ) : null}
                   </td>
                   <td>
-                    <div className={`conf ${row.confidence === "Low confidence" ? "low" : "ok"}`}>
-                      {row.confidence}
-                    </div>
-                    <div className="sub">{row.comparisonPa} PA vs mix</div>
+                    {scoringPending ? (
+                      <div className="sub">Pending</div>
+                    ) : (
+                      <>
+                        <div className={`conf ${row.confidence === "Low confidence" ? "low" : "ok"}`}>
+                          {row.confidence}
+                        </div>
+                        <div className="sub">{row.comparisonPa} PA vs mix</div>
+                      </>
+                    )}
                   </td>
                   <td className="why">{row.why}</td>
                 </tr>

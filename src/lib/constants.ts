@@ -72,6 +72,14 @@ export const LINEUP_CACHE_MS = 30 * 60 * 1000;
 export const SAVANT_CACHE_MS = 20 * 60 * 60 * 1000;
 export const PEOPLE_CACHE_MS = 20 * 60 * 60 * 1000;
 
+/** Hobby allows 10s (default) or 60s. First paint must not need the full Savant miss. */
+export const ROUTE_MAX_DURATION_SECONDS = 60;
+
+/** Leave headroom under maxDuration for MLB schedule + HTML after Savant work. */
+export const VERCEL_SAVANT_BUDGET_MS = 35_000;
+export const VERCEL_HTTP_TIMEOUT_MS = 8_000;
+export const STATS_API_TIMEOUT_MS = 12_000;
+
 export const USER_AGENT =
   "MatchupResearch/1.0 (research tool; not a sportsbook; github.com/jabr10/BettingApp)";
 
