@@ -1,0 +1,26 @@
+{
+  "name": "mlb-matchup-research",
+  "private": true,
+  "version": "0.1.0",
+  "description": "MLB betting-research matchup tool — usage-weighted vs-pitch-type expected stats. Not a sportsbook.",
+  "scripts": {
+    "dev": "next dev --port 3000",
+    "build": "next build",
+    "start": "next start --port 3000",
+    "test": "vitest run",
+    "warmup": "npx tsx scripts/warmup.ts"
+  },
+  "dependencies": {
+    "next": "^15.5.2",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.0",
+    "@types/react": "^19.1.12",
+    "@types/react-dom": "^19.1.9",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}
