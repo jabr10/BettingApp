@@ -1,5 +1,7 @@
 "use client";
 
+import { ThemeToggle } from "@/components/ThemeToggle";
+
 export default function Error({
   error,
 }: {
@@ -12,6 +14,7 @@ export default function Error({
           <div className="eyebrow">Matchup research · not a sportsbook</div>
           <h1>Today&apos;s slate</h1>
         </div>
+        <ThemeToggle />
       </header>
       <div className="card empty error">
         Could not finish this page: {error.message}. No matchup numbers were invented.

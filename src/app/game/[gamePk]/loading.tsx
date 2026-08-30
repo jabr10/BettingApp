@@ -1,8 +1,15 @@
+import { ThemeToggle } from "@/components/ThemeToggle";
+
 export default function GameLoading() {
   return (
     <main className="wrap">
-      <div className="eyebrow">Loading matchup…</div>
-      <p className="lede">Starter mix and batting-order table.</p>
+      <header className="topbar">
+        <div className="brand">
+          <div className="eyebrow">Loading matchup…</div>
+          <p className="lede">Starter mix and batting-order table.</p>
+        </div>
+        <ThemeToggle />
+      </header>
       <div className="grid two">
         <div className="skel" />
         <div className="skel" />

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { LineupTable } from "@/components/LineupTable";
 import { MixCard } from "@/components/MixCard";
 import { ChipList } from "@/components/Chip";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { combinedLineupLabel } from "@/lib/slate";
 import type { GameCard } from "@/lib/types";
 
@@ -33,9 +34,12 @@ export function GameView({
             H2H.
           </p>
         </div>
-        <span className={`badge ${game.lineupState === "Not posted" ? "Not" : game.lineupState}`}>
-          {combinedLineupLabel(game)}
-        </span>
+        <div className="topbar-end">
+          <ThemeToggle />
+          <span className={`badge ${game.lineupState === "Not posted" ? "Not" : game.lineupState}`}>
+            {combinedLineupLabel(game)}
+          </span>
+        </div>
       </header>
 
       {savantPending ? (
