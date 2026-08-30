@@ -11,7 +11,7 @@ import {
   type ScheduleGame,
 } from "./mlb";
 import { buildPitcherMix, chipsForEdges, edgesFromProj, pickGameChips, projectBatter, standVsPitcher } from "./scoring";
-import { loadSavantStore } from "./savant";
+import { emptySavantStore, loadSavantStore, savantStoreIsUsable } from "./savant";
 import { buildWhy, topPitchLabels } from "./why";
 import type {
   BatterRow,
@@ -28,10 +28,32 @@ import type {
   TeamSide,
 } from "./types";
 
+/** MLB schedule only. Fast enough for first paint on Vercel Hobby. */
+export async function loadSlateShell(date = todayEt()): Promise<Slate> {
+  const warnings: DataWarning[] = [];
+  let gamesRaw: ScheduleGame[] = [];
+  try {
+    gamesRaw = await fetchSchedule(date);
+  } catch (err) {
+    warnings.push({
+      source: "statsapi",
+      message: `Could not load today's MLB schedule: ${err instanceof Error ? err.message : String(err)}.`,
+    });
+    return emptySlate(date, warnings);
+  }
+  return {
+    dateEt: date,
+    timezone: TIMEZONE,
+    games: gamesRaw.map(gameFromSchedule),
+    warnings,
+    cache: { savantAsOf: null, slateAsOf: new Date().toISOString() },
+  };
+}
+
 export async function loadSlate(date = todayEt()): Promise<Slate> {
   const key = `slate-${date}`;
   const cached = await cacheGet<Slate>(key, SLATE_CACHE_MS);
-  if (cached) return cached;
+  if (cached?.cache.savantAsOf) return cached;
 
   const warnings: DataWarning[] = [];
   let gamesRaw: ScheduleGame[] = [];
@@ -42,14 +64,16 @@ export async function loadSlate(date = todayEt()): Promise<Slate> {
       source: "statsapi",
       message: `Could not load today's MLB schedule: ${err instanceof Error ? err.message : String(err)}.`,
     });
-    return {
-      dateEt: date,
-      timezone: TIMEZONE,
-      games: [],
-      warnings,
-      cache: { savantAsOf: null, slateAsOf: new Date().toISOString() },
-    };
+    return emptySlate(date, warnings);
   }
+
+  const recentPromise = fetchRecentSchedule(addDays(date, -60), addDays(date, -1)).catch((err) => {
+    warnings.push({
+      source: "statsapi",
+      message: `Could not load recent games for projected lineups: ${err instanceof Error ? err.message : String(err)}.`,
+    });
+    return [] as ScheduleGame[];
+  });
 
   let store: SavantStore;
   try {
@@ -60,32 +84,15 @@ export async function loadSlate(date = todayEt()): Promise<Slate> {
       source: "savant",
       message: `Savant leaderboards failed: ${err instanceof Error ? err.message : String(err)}. No matchup numbers were invented.`,
     });
-    const empty = await buildSlateWithoutSavant(date, gamesRaw, warnings);
-    await cacheSet(key, empty, SLATE_CACHE_MS);
-    return empty;
+    const recent = await recentPromise;
+    return assembleSlate(date, gamesRaw, recent, emptySavantStore(), warnings);
   }
 
-  let recent: ScheduleGame[] = [];
-  try {
-    recent = await fetchRecentSchedule(addDays(date, -60), addDays(date, -1));
-  } catch (err) {
-    warnings.push({
-      source: "statsapi",
-      message: `Could not load recent games for projected lineups: ${err instanceof Error ? err.message : String(err)}.`,
-    });
+  const recent = await recentPromise;
+  const slate = await assembleSlate(date, gamesRaw, recent, store, warnings);
+  if (savantStoreIsUsable(store)) {
+    await cacheSet(key, slate, SLATE_CACHE_MS);
   }
-
-  const peopleIds = collectIds(gamesRaw, recent);
-  const people = await fetchPeople(peopleIds);
-    const games = gamesRaw.map((g) => buildGame(g, recent, people, store));
-  const slate: Slate = {
-    dateEt: date,
-    timezone: TIMEZONE,
-    games,
-    warnings,
-    cache: { savantAsOf: store.fetchedAt, slateAsOf: new Date().toISOString() },
-  };
-  await cacheSet(key, slate, SLATE_CACHE_MS);
   return slate;
 }
 
@@ -94,33 +101,140 @@ export async function loadGame(gamePk: number, date = todayEt()): Promise<GameCa
   return slate.games.find((g) => g.gamePk === gamePk) ?? null;
 }
 
-async function buildSlateWithoutSavant(
+function emptySlate(date: string, warnings: DataWarning[]): Slate {
+  return {
+    dateEt: date,
+    timezone: TIMEZONE,
+    games: [],
+    warnings,
+    cache: { savantAsOf: null, slateAsOf: new Date().toISOString() },
+  };
+}
+
+async function assembleSlate(
   date: string,
   gamesRaw: ScheduleGame[],
+  recent: ScheduleGame[],
+  store: SavantStore,
   warnings: DataWarning[],
 ): Promise<Slate> {
-  const people = await fetchPeople(collectIds(gamesRaw, []));
-  const games = gamesRaw.map((g) => {
-    const emptyStore = {
-      fetchedAt: "",
-      pitcherUsage: new Map(),
-      pitcherVsType: new Map(),
-      batterVsType: new Map(),
-      batterVsHand: new Map(),
-      league: {
-        L: { hand: "L" as const, xwoba: 0, xba: 0, xslg: 0, whiff: 0, barrel: null, pa: 0 },
-        R: { hand: "R" as const, xwoba: 0, xba: 0, xslg: 0, whiff: 0, barrel: null, pa: 0 },
-      },
-      warnings: [],
-    };
-    return buildGame(g, [], people, emptyStore);
-  });
+  let people = new Map<number, Person>();
+  try {
+    people = await fetchPeople(collectIds(gamesRaw, recent));
+  } catch (err) {
+    warnings.push({
+      source: "statsapi",
+      message: `Could not load player hands and bat sides: ${err instanceof Error ? err.message : String(err)}.`,
+    });
+  }
+  const games = gamesRaw.map((g) => buildGame(g, recent, people, store));
   return {
     dateEt: date,
     timezone: TIMEZONE,
     games,
     warnings,
-    cache: { savantAsOf: null, slateAsOf: new Date().toISOString() },
+    cache: { savantAsOf: store.fetchedAt || null, slateAsOf: new Date().toISOString() },
+  };
+}
+
+export function gameFromSchedule(g: ScheduleGame): GameCard {
+  const homeOfficial = officialLineup(g.lineups?.homePlayers);
+  const awayOfficial = officialLineup(g.lineups?.awayPlayers);
+  const homeStarter = scheduleStarter(g.teams.home.probablePitcher);
+  const awayStarter = scheduleStarter(g.teams.away.probablePitcher);
+  const home = scheduleSide({
+    teamId: g.teams.home.team.id,
+    teamName: g.teams.home.team.name,
+    abbreviation: g.teams.home.team.abbreviation ?? g.teams.home.team.name,
+    official: homeOfficial,
+    starter: homeStarter,
+  });
+  const away = scheduleSide({
+    teamId: g.teams.away.team.id,
+    teamName: g.teams.away.team.name,
+    abbreviation: g.teams.away.team.abbreviation ?? g.teams.away.team.name,
+    official: awayOfficial,
+    starter: awayStarter,
+  });
+  const lineupState: GameCard["lineupState"] =
+    away.lineupState === home.lineupState ? away.lineupState : "Split";
+  return {
+    gamePk: g.gamePk,
+    gameDateUtc: g.gameDate,
+    gameTimeEt: formatEtTime(g.gameDate),
+    park: g.venue?.name ?? "Unknown park",
+    status: g.status?.detailedState ?? "",
+    away,
+    home,
+    lineupState,
+    chips: [],
+    warnings: [],
+  };
+}
+
+function scheduleStarter(probable: { id: number; fullName: string } | undefined): StarterCard {
+  if (!probable) {
+    return {
+      playerId: null,
+      name: null,
+      throws: null,
+      topPitches: [],
+      mix: [],
+      otherUsage: 0,
+      otherTypes: [],
+      mixQualityXwoba: null,
+      missingReason: "No probable pitcher posted on the MLB schedule.",
+    };
+  }
+  return {
+    playerId: probable.id,
+    name: probable.fullName,
+    throws: null,
+    topPitches: [],
+    mix: [],
+    otherUsage: 0,
+    otherTypes: [],
+    mixQualityXwoba: null,
+    missingReason: null,
+  };
+}
+
+function scheduleSide(args: {
+  teamId: number;
+  teamName: string;
+  abbreviation: string;
+  official: OfficialLineupPlayer[];
+  starter: StarterCard;
+}): TeamSide {
+  const posted = args.official.length >= 8;
+  return {
+    teamId: args.teamId,
+    teamName: args.teamName,
+    abbreviation: args.abbreviation,
+    starter: args.starter,
+    lineupState: posted ? "Official" : "Not posted",
+    lineup: posted
+      ? args.official.slice(0, 9).map((p, idx) => unscoredBatter(p, idx + 1))
+      : [],
+    chips: [],
+  };
+}
+
+function unscoredBatter(player: OfficialLineupPlayer, order: number): BatterRow {
+  return {
+    playerId: player.id,
+    name: player.fullName,
+    battingOrder: order,
+    position: player.position,
+    batSide: null,
+    standVsPitcher: null,
+    proj: { xwoba: null, xba: null, xslg: null, whiff: null, barrel: null },
+    edges: { hitsXwobaPoints: null, kWhiffPp: null, hrBarrelPp: null, hrXslgPoints: null },
+    comparisonPa: 0,
+    confidence: "Low confidence",
+    chips: [],
+    why: "Pitch-mix scoring waits on Baseball Savant. Edges are omitted — no numbers were invented.",
+    missingReason: "Waiting on Baseball Savant pitch-mix files.",
   };
 }
 
@@ -273,6 +387,7 @@ function starterCard(
   const usage = store.pitcherUsage.get(probable.id);
   const vsType = store.pitcherVsType.get(probable.id);
   if (!usage && !vsType) {
+    const storeEmpty = store.pitcherUsage.size === 0 && store.pitcherVsType.size === 0;
     return {
       playerId: probable.id,
       name: probable.fullName,
@@ -282,7 +397,9 @@ function starterCard(
       otherUsage: 0,
       otherTypes: [],
       mixQualityXwoba: null,
-      missingReason: `No 2026 pitch-mix sample on Savant for ${probable.fullName}.`,
+      missingReason: storeEmpty
+        ? `No pitch-mix file loaded for this slate, so ${probable.fullName}'s mix is omitted.`
+        : `No 2026 pitch-mix sample on Savant for ${probable.fullName}.`,
     };
   }
   const rawUsage = usage ?? Object.fromEntries([...(vsType?.entries() ?? [])].map(([t, r]) => [t, r.pitches]));

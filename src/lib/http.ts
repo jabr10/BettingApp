@@ -1,4 +1,4 @@
-import { USER_AGENT } from "./constants";
+import { USER_AGENT, VERCEL_HTTP_TIMEOUT_MS } from "./constants";
 
 const SAVANT_HOST = "baseballsavant.mlb.com";
 
@@ -27,8 +27,9 @@ async function fetchTextOnce(
   url: string,
   opts: { timeoutMs?: number; retries?: number },
 ): Promise<string> {
-  const timeoutMs = opts.timeoutMs ?? 45_000;
-  const retries = opts.retries ?? 2;
+  const onVercel = Boolean(process.env.VERCEL);
+  const timeoutMs = opts.timeoutMs ?? (onVercel ? VERCEL_HTTP_TIMEOUT_MS : 45_000);
+  const retries = opts.retries ?? (onVercel ? 1 : 2);
   let lastErr: Error | null = null;
   for (let attempt = 0; attempt <= retries; attempt++) {
     const ctrl = new AbortController();
@@ -61,8 +62,8 @@ async function fetchTextOnce(
   throw lastErr ?? new Error(`Failed ${url}`);
 }
 
-export async function fetchJson<T>(url: string): Promise<T> {
-  const text = await fetchText(url, { timeoutMs: 30_000 });
+export async function fetchJson<T>(url: string, opts: { timeoutMs?: number } = {}): Promise<T> {
+  const text = await fetchText(url, { timeoutMs: opts.timeoutMs ?? 15_000 });
   return JSON.parse(text) as T;
 }
 

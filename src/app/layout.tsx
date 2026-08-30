@@ -7,6 +7,10 @@ export const metadata: Metadata = {
     "Usage-weighted batter vs starter pitch-mix research. Expected stats only. Not a sportsbook.",
 };
 
+/** Hobby allows 10s (default) or 60s. Must be a numeric literal for Next.js. */
+export const maxDuration = 60;
+export const dynamic = "force-dynamic";
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">

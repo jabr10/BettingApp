@@ -1,4 +1,4 @@
-import { LINEUP_CACHE_MS, PEOPLE_CACHE_MS, STATS_API_BASE } from "./constants";
+import { LINEUP_CACHE_MS, PEOPLE_CACHE_MS, STATS_API_BASE, STATS_API_TIMEOUT_MS } from "./constants";
 import { cacheGet, cacheSet } from "./cache";
 import { fetchJson } from "./http";
 import type { Hand, OfficialLineupPlayer, PastTeamGame, Person } from "./types";
@@ -52,7 +52,7 @@ export async function fetchSchedule(date: string): Promise<ScheduleGame[]> {
   if (cached) return cached;
   const hydrate = "probablePitcher,lineups,venue,team";
   const url = `${STATS_API_BASE}/schedule?sportId=1&date=${date}&hydrate=${encodeURIComponent(hydrate)}`;
-  const data = await fetchJson<ScheduleResponse>(url);
+  const data = await fetchJson<ScheduleResponse>(url, { timeoutMs: STATS_API_TIMEOUT_MS });
   const games = (data.dates ?? []).flatMap((d) => d.games ?? []);
   await cacheSet(key, games, LINEUP_CACHE_MS);
   return games;
@@ -64,7 +64,7 @@ export async function fetchRecentSchedule(startDate: string, endDate: string): P
   if (cached) return cached;
   const hydrate = "probablePitcher,lineups,venue,team";
   const url = `${STATS_API_BASE}/schedule?sportId=1&startDate=${startDate}&endDate=${endDate}&hydrate=${encodeURIComponent(hydrate)}`;
-  const data = await fetchJson<ScheduleResponse>(url);
+  const data = await fetchJson<ScheduleResponse>(url, { timeoutMs: 20_000 });
   const games = (data.dates ?? []).flatMap((d) => d.games ?? []);
   await cacheSet(key, games, LINEUP_CACHE_MS);
   return games;
@@ -83,7 +83,7 @@ export async function fetchPeople(ids: number[]): Promise<Map<number, Person>> {
   for (let i = 0; i < missing.length; i += chunkSize) {
     const chunk = missing.slice(i, i + chunkSize);
     const url = `${STATS_API_BASE}/people?personIds=${chunk.join(",")}`;
-    const data = await fetchJson<PeopleResponse>(url);
+    const data = await fetchJson<PeopleResponse>(url, { timeoutMs: STATS_API_TIMEOUT_MS });
     for (const p of data.people ?? []) {
       const person: Person = {
         id: p.id,

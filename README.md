@@ -19,13 +19,15 @@ Useful extras:
 
 ```bash
 npm test              # scoring / chip / shrink unit tests
-npm run warmup        # pull + cache Savant/Stats so the first page load is fast
+npm run warmup        # pull + cache Savant/Stats so mix/chips attach without a cold miss
 npm run build && npm start
 ```
 
 The home screen is **today’s slate** in `America/New_York` (game time, park, both starters + hand + top pitches, lineup state, up to 3 chips). Tap a game for the starter mix card and the full batting-order table.
 
-First request after a cache miss talks to Baseball Savant with a polite delay between CSV downloads. That can take 30–60 seconds. After that, leaderboards are cached on disk in `.cache/` for ~20 hours; the day’s slate is cached ~10 minutes.
+The first HTML for `/` is the **MLB Stats API schedule** (games, parks, probable pitchers, official lineups). Pitch-mix, chips, and vs-type expected stats attach after Baseball Savant CSVs are ready; if that export fails, the existing warning/empty UI is shown. **No mock or invented rates.**
+
+On Vercel, disk cache lives in `/tmp/matchup-research-cache` (the serverless filesystem is read-only except `/tmp`). Locally it is `.cache/` under the project. Cache write failures never fail the request. Leaderboards cache ~20 hours; the scored slate caches ~10 minutes. Routes set `maxDuration` to 60s (Hobby cap) so a remaining Savant miss can still finish after first paint.
 
 ## Data sources
 
@@ -140,4 +142,4 @@ Inside a game, **every batting-order row** is shown (not only chips), each with 
 
 ## Deploy
 
-This is a Next.js server app (Savant is never called from the browser). A preview URL needs a Node host with outbound HTTPS to `statsapi.mlb.com` and `baseballsavant.mlb.com` (Vercel, Fly, or similar). This repo does not include host credentials, so no public preview is published from the agent environment unless those secrets are provided.
+This is a Next.js server app (Savant is never called from the browser). A preview URL needs a Node host with outbound HTTPS to `statsapi.mlb.com` and `baseballsavant.mlb.com` (Vercel, Fly, or similar). On Vercel Hobby, `/` streams the schedule first so a cold Savant miss cannot blank the page. This repo does not include host credentials, so no public preview is published from the agent environment unless those secrets are provided.

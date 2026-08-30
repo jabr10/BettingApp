@@ -1,12 +1,11 @@
-import Link from "next/link";
-import { LineupTable } from "@/components/LineupTable";
-import { MixCard } from "@/components/MixCard";
-import { ChipList } from "@/components/Chip";
+import { Suspense } from "react";
+import { GameView } from "@/components/GameView";
 import { todayEt } from "@/lib/dates";
-import { combinedLineupLabel, loadGame } from "@/lib/slate";
+import { loadGame, loadSlateShell } from "@/lib/slate";
 import { notFound } from "next/navigation";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 export default async function GamePage({
   params,
@@ -16,60 +15,40 @@ export default async function GamePage({
   const { gamePk } = await params;
   const pk = Number(gamePk);
   if (!Number.isFinite(pk)) notFound();
-  const game = await loadGame(pk, todayEt());
-  if (!game) notFound();
-
-  const awaySp = game.away.starter.name ?? "TBD";
-  const homeSp = game.home.starter.name ?? "TBD";
+  const shell = await loadSlateShell();
+  const shellGame = shell.games.find((g) => g.gamePk === pk);
+  if (!shellGame) notFound();
 
   return (
-    <main className="wrap">
-      <Link href="/" className="back">
-        ← Today&apos;s slate
-      </Link>
-      <header className="topbar">
-        <div className="brand">
-          <div className="eyebrow">
-            {game.gameTimeEt} · {game.park}
-          </div>
-          <h1>
-            {game.away.teamName} @ {game.home.teamName}
-          </h1>
-          <p className="lede">
-            Lineups: {combinedLineupLabel(game)}. Scored vs starter pitch mix, not batter-vs-pitcher
-            H2H.
-          </p>
-        </div>
-        <span className={`badge ${game.lineupState === "Not posted" ? "Not" : game.lineupState}`}>
-          {combinedLineupLabel(game)}
-        </span>
-      </header>
-
-      {game.away.lineupState === "Projected" || game.home.lineupState === "Projected" ? (
-        <div className="banner">Projected lineup, not official.</div>
-      ) : null}
-
-      <ChipList chips={game.chips} />
-
-      <div className="section two">
-        <MixCard card={game.away.starter} side="Away" />
-        <MixCard card={game.home.starter} side="Home" />
-      </div>
-
-      <div className="section">
-        <LineupTable side={game.away} vs={homeSp} />
-      </div>
-      <div className="section">
-        <LineupTable side={game.home} vs={awaySp} />
-      </div>
-
-      <footer className="footer">
-        <p>
-          Hits / K / HR columns are dampened edges vs the league same-hand baseline (xwOBA points,
-          whiff percentage points, xSLG points / barrel percentage points). Ranked on expected stats
-          only. Tiny samples stay labeled Low confidence and cannot win the slate chip sort.
-        </p>
-      </footer>
-    </main>
+    <Suspense fallback={<GameView game={shellGame} savantPending />}>
+      <EnrichedGame pk={pk} date={shell.dateEt} />
+    </Suspense>
   );
+}
+
+async function EnrichedGame({ pk, date }: { pk: number; date: string }) {
+  try {
+    const game = await loadGame(pk, date);
+    if (!game) notFound();
+    return <GameView game={game} />;
+  } catch (err) {
+    const shell = await loadSlateShell(date);
+    const game = shell.games.find((g) => g.gamePk === pk);
+    if (!game) notFound();
+    const message = err instanceof Error ? err.message : String(err);
+    return (
+      <GameView
+        game={{
+          ...game,
+          warnings: [
+            ...game.warnings,
+            {
+              source: "savant",
+              message: `Savant leaderboards failed: ${message}. No matchup numbers were invented.`,
+            },
+          ],
+        }}
+      />
+    );
+  }
 }
