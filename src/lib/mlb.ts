@@ -144,6 +144,7 @@ export function projectLineup(
   if (!pool.length) return { lineup: [], usedVsHand, gamesUsed: 0 };
 
   const slots: OfficialLineupPlayer[] = [];
+  const used = new Set<number>();
   const n = Math.min(9, Math.max(...pool.map((g) => g.lineup.length)));
   for (let i = 0; i < n; i++) {
     const counts = new Map<number, { player: OfficialLineupPlayer; count: number; last: string }>();
@@ -158,11 +159,26 @@ export function projectLineup(
         counts.set(p.id, { player: p, count: 1, last: g.date });
       }
     }
-    const winner = [...counts.values()].sort((a, b) => {
+    const ranked = [...counts.values()].sort((a, b) => {
       if (b.count !== a.count) return b.count - a.count;
       return a.last < b.last ? 1 : -1;
-    })[0];
-    if (winner) slots.push(winner.player);
+    });
+    const winner = ranked.find((c) => !used.has(c.player.id));
+    if (winner) {
+      slots.push(winner.player);
+      used.add(winner.player.id);
+    }
+  }
+  if (slots.length < 9) {
+    for (const g of pool) {
+      for (const p of g.lineup) {
+        if (used.has(p.id)) continue;
+        slots.push(p);
+        used.add(p.id);
+        if (slots.length >= 9) break;
+      }
+      if (slots.length >= 9) break;
+    }
   }
   return { lineup: slots, usedVsHand, gamesUsed: pool.length };
 }

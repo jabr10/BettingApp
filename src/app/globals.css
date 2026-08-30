@@ -156,6 +156,7 @@ th {
 }
 td { padding: 9px 6px; border-bottom: 1px solid #1d2833; vertical-align: top; }
 td.num, th.num { text-align: right; font-family: var(--mono); white-space: nowrap; }
+td:first-child, .name { white-space: nowrap; }
 .why { color: var(--muted); font-size: 12px; max-width: 28rem; }
 .name { font-weight: 600; }
 .sub { color: var(--faint); font-size: 11px; }

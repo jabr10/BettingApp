@@ -337,6 +337,7 @@ function scoreBatter(args: {
           batterVsType,
           vsHand,
           pitcherName: args.vsPitcher.name,
+          hitsEdge: edges.hitsXwobaPoints,
         });
 
   return {
