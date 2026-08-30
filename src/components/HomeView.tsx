@@ -1,4 +1,5 @@
 import { SlateCard } from "@/components/SlateCard";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { formatEtLong } from "@/lib/dates";
 import type { Slate } from "@/lib/types";
 
@@ -21,6 +22,7 @@ export function HomeView({
             H2H, no odds, no implied probabilities.
           </p>
         </div>
+        <ThemeToggle />
       </header>
 
       {savantPending ? (
