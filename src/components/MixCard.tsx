@@ -52,7 +52,7 @@ export function MixCard({ card, side }: { card: StarterCard; side: string }) {
                 {card.mix.map((m) => (
                   <tr key={m.type}>
                     <td>
-                      {m.type === "OTHER" ? "Other (<8% / non-core)" : `${m.type} ${pitchLabel(m.type)}`}
+                      {m.type === "OTHER" ? "Other" : `${m.type} ${pitchLabel(m.type)}`}
                     </td>
                     <td className="num">{fmtPct(m.usage)}</td>
                     <td className="num">{fmtXwoba(m.xwoba)}</td>

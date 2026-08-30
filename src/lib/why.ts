@@ -8,8 +8,9 @@ export function buildWhy(args: {
   batterVsType: Map<string, PitchRates> | undefined;
   vsHand: VsHandMeans | undefined;
   pitcherName: string | null;
+  hitsEdge?: number | null;
 }): string {
-  const { mix, batterVsType, vsHand, pitcherName } = args;
+  const { mix, batterVsType, vsHand, pitcherName, hitsEdge } = args;
   if (!mix.length) return "No starter mix on file, so there is no vs-type projection.";
   if (!batterVsType || batterVsType.size === 0) {
     return "No Savant vs-pitch-type sample for this batter in the 2025–2026 pool.";
@@ -50,7 +51,13 @@ export function buildWhy(args: {
       ? `${he} is ${pct(top.usage)} ${label(top.type)}`
       : `${he} mix is thin`;
 
-  if (crush.length) {
+  const fade = hitsEdge != null && hitsEdge <= -20;
+  const hot = hitsEdge != null && hitsEdge >= 20;
+  if (fade && weak.length) {
+    const feature = weak[0];
+    return `Soft vs ${feature.type}; ${usageClause}; ${feature.pa} PA vs ${feature.type}.`;
+  }
+  if ((hot || !fade) && crush.length) {
     const types = crush.map((c) => c.type).join("/");
     const feature = crush[0];
     return `Crushes ${types}; ${usageClause}; ${feature.pa} PA vs ${feature.type}.`;
